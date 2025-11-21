@@ -70,16 +70,35 @@ app.get('/auth/tiktok/callback', async (req, res) => {
         console.log('Refresh Token:', refresh_token);
         console.log('Open ID:', open_id);
 
+        // 3. Fetch User Profile Data
+        const userInfoEndpoint = 'https://open.tiktokapis.com/v2/user/info/';
+        // Fields to request: open_id, union_id, avatar_url, display_name
+        // Note: Adjust fields based on scopes granted.
+        const userInfoResponse = await axios.get(userInfoEndpoint, {
+            headers: {
+                'Authorization': `Bearer ${access_token}`
+            },
+            params: {
+                'fields': 'open_id,union_id,avatar_url,display_name'
+            }
+        });
+
+        const userData = userInfoResponse.data.data;
+        console.log('User Data:', userData);
+
         res.send(`
             <h1>Login Successful</h1>
             <p>Open ID: ${open_id}</p>
             <p>Access Token: ${access_token.substring(0, 10)}...</p>
-            <p>Check server logs for full tokens.</p>
+            <h2>User Profile</h2>
+            <p>Display Name: ${userData.display_name}</p>
+            <p>Avatar: <img src="${userData.avatar_url}" alt="Avatar" width="50"></p>
+            <pre>${JSON.stringify(userData, null, 2)}</pre>
         `);
 
     } catch (error) {
-        console.error('Error exchanging token:', error.response ? error.response.data : error.message);
-        res.status(500).send(`Error exchanging token: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
+        console.error('Error:', error.response ? error.response.data : error.message);
+        res.status(500).send(`Error: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
     }
 });
 
