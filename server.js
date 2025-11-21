@@ -1,7 +1,7 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const cookieParser = require('cookie-parser');
+import 'dotenv/config';
+import express from 'express';
+import axios from 'axios';
+import cookieParser from 'cookie-parser';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
