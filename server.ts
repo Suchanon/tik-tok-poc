@@ -71,7 +71,14 @@ const REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI;
 // Scopes based on POC_TIKTOK.md
 // Scopes based on user provided screenshot
 // Removed business.account.info.read as it was not in the portal
-const SCOPES = 'user.info.basic,user.info.profile,user.info.stats';
+const SCOPES = [
+    'user.info.basic',
+    'artist.certification.read',
+    'artist.certification.update',
+    'user.info.profile',
+    'user.info.stats',
+    'video.list'
+].join(',');
 
 app.get('/', (req: Request, res: Response) => {
     res.send('<h1>TikTok OAuth 2.0 POC</h1><a href="/auth/tiktok">Login with TikTok</a>');
@@ -88,6 +95,7 @@ app.get('/auth/tiktok', (req: Request, res: Response) => {
     url += `&response_type=code`;
     url += `&redirect_uri=${REDIRECT_URI}`;
     url += `&state=${csrfState}`;
+    url += `&disable_auto_auth=1`; // Force re-authorization/login screen
 
     res.redirect(url);
 });
@@ -163,30 +171,133 @@ app.get('/auth/tiktok/callback', async (req: Request, res: Response) => {
         console.log('User Data:', userData);
 
         res.send(`
-            <h1>Login Successful</h1>
-            <p>Open ID: ${open_id}</p>
-            <p>Access Token: ${access_token}...</p>
-            <h2>User Profile</h2>
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <img src="${userData.avatar_large_url || userData.avatar_url}" alt="Avatar" width="100" style="border-radius: 50%;">
-                <div>
-                    <h3>${userData.display_name} ${userData.is_verified ? '☑️' : ''}</h3>
-                    <p>${userData.bio_description || 'No bio'}</p>
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>TikTok Login Success</title>
+            <style>
+                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; color: #333; }
+                .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); max-width: 480px; width: 90%; }
+                h1 { font-size: 24px; margin: 0 0 30px 0; color: #161823; text-align: center; font-weight: 700; }
+                .profile-header { display: flex; align-items: center; gap: 20px; margin-bottom: 30px; }
+                .avatar { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                .user-info { flex: 1; }
+                .user-info h2 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 6px; color: #161823; }
+                .verified { color: #20D5EC; font-size: 18px; }
+                .bio { color: #86909c; margin: 6px 0 0; font-size: 14px; line-height: 1.5; }
+                .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 30px; text-align: center; background: #f8f9fa; padding: 20px; border-radius: 16px; }
+                .stat-value { display: block; font-size: 18px; font-weight: 700; color: #161823; margin-bottom: 4px; }
+                .stat-label { font-size: 12px; color: #73747b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+                .actions { display: flex; flex-direction: column; gap: 12px; }
+                .btn { display: block; text-align: center; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 600; transition: all 0.2s ease; font-size: 15px; }
+                .btn-primary { background: #FE2C55; color: white; box-shadow: 0 4px 12px rgba(254, 44, 85, 0.2); }
+                .btn-secondary { background: #fff; color: #161823; border: 1px solid #e3e3e3; }
+                .btn:hover { transform: translateY(-2px); }
+                .btn-primary:hover { box-shadow: 0 6px 16px rgba(254, 44, 85, 0.3); }
+                .btn-secondary:hover { background: #f8f9fa; border-color: #d0d0d0; }
+                .tech-details { margin-top: 30px; border-top: 1px solid #f0f0f0; padding-top: 20px; font-size: 12px; color: #999; font-family: monospace; }
+                .tech-item { margin-bottom: 8px; word-break: break-all; display: flex; gap: 8px; }
+                .tech-label { font-weight: 600; color: #666; min-width: 70px; }
+                details { margin-top: 20px; background: #1e1e1e; border-radius: 12px; overflow: hidden; }
+                summary { padding: 15px; cursor: pointer; font-weight: 500; color: #fff; user-select: none; font-size: 13px; display: flex; align-items: center; justify-content: space-between; }
+                summary::after { content: '+'; font-size: 16px; }
+                details[open] summary::after { content: '-'; }
+                pre { margin: 0; padding: 20px; overflow-x: auto; background: #1e1e1e; color: #a9b7c6; font-size: 12px; border-top: 1px solid #333; line-height: 1.5; }
+            </style>
+            </head>
+            <body>
+            <div class="container">
+                <h1>Login Successful</h1>
+                
+                <div class="profile-header">
+                    <img src="${userData.avatar_large_url || userData.avatar_url}" class="avatar" alt="Avatar">
+                    <div class="user-info">
+                        <h2>${userData.display_name} ${userData.is_verified ? '<span class="verified">☑️</span>' : ''}</h2>
+                        <p class="bio">${userData.bio_description || 'No bio available'}</p>
+                    </div>
                 </div>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-value">${userData.follower_count}</span>
+                        <span class="stat-label">Followers</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${userData.following_count}</span>
+                        <span class="stat-label">Following</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${userData.likes_count}</span>
+                        <span class="stat-label">Likes</span>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <a href="${userData.profile_deep_link}" target="_blank" class="btn btn-primary">Open in TikTok</a>
+                    <a href="/auth/tiktok/refresh?refresh_token=${refresh_token}" target="_blank" class="btn btn-secondary">Test Refresh Token</a>
+                </div>
+
+                <div class="tech-details">
+                    <div class="tech-item"><span class="tech-label">Open ID:</span> ${open_id}</div>
+                    <div class="tech-item"><span class="tech-label">Token:</span> ${access_token}...</div>
+                </div>
+
+                <details>
+                    <summary>View Raw JSON Response</summary>
+                    <pre>${JSON.stringify(userData, null, 2)}</pre>
+                </details>
             </div>
-            <div style="margin-top: 20px; display: flex; gap: 20px;">
-                <div><strong>Followers:</strong> ${userData.follower_count}</div>
-                <div><strong>Following:</strong> ${userData.following_count}</div>
-                <div><strong>Likes:</strong> ${userData.likes_count}</div>
-            </div>
-            <p><a href="${userData.profile_deep_link}" target="_blank">Open in TikTok</a></p>
-            <h3>Raw Data</h3>
-            <pre>${JSON.stringify(userData, null, 2)}</pre>
+            </body>
+            </html>
         `);
 
     } catch (error: any) {
         console.error('Error:', error.response ? error.response.data : error.message);
         res.status(500).send(`Error: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
+    }
+});
+
+// 3. Refresh Token Endpoint (Demo)
+app.get('/auth/tiktok/refresh', async (req: Request, res: Response) => {
+    const { refresh_token } = req.query;
+
+    if (!refresh_token) {
+        res.status(400).send('Error: No refresh_token provided');
+        return;
+    }
+
+    try {
+        const tokenEndpoint = 'https://open.tiktokapis.com/v2/oauth/token/';
+        const params = new URLSearchParams();
+        if (CLIENT_KEY) params.append('client_key', CLIENT_KEY);
+        if (CLIENT_SECRET) params.append('client_secret', CLIENT_SECRET);
+        params.append('grant_type', 'refresh_token');
+        params.append('refresh_token', refresh_token as string);
+
+        const response = await axios.post<TikTokTokenResponse>(tokenEndpoint, params, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+
+        const { access_token, refresh_token: new_refresh_token, expires_in, open_id } = response.data;
+
+        console.log('New Access Token:', access_token);
+        console.log('New Refresh Token:', new_refresh_token);
+
+        res.send(`
+            <h1>Token Refreshed Successfully</h1>
+            <p><strong>New Access Token:</strong> ${access_token}</p>
+            <p><strong>New Refresh Token:</strong> ${new_refresh_token}</p>
+            <p><strong>Expires In:</strong> ${expires_in} seconds</p>
+            <p><strong>Open ID:</strong> ${open_id}</p>
+        `);
+
+    } catch (error: any) {
+        console.error('Error refreshing token:', error.response ? error.response.data : error.message);
+        res.status(500).send(`Error refreshing token: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
     }
 });
 
