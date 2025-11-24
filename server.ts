@@ -3,6 +3,8 @@ import express, { Request, Response } from 'express';
 import axios from 'axios';
 import cookieParser from 'cookie-parser';
 
+import * as crypto from 'crypto';
+
 interface TikTokTokenResponse {
     open_id: string;
     access_token: string;
@@ -61,6 +63,13 @@ interface TikTokUserInfoResponse {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware to capture raw body for webhook verification
+app.use(express.json({
+    verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Configuration
@@ -77,7 +86,8 @@ const SCOPES = [
     'artist.certification.update',
     'user.info.profile',
     'user.info.stats',
-    'video.list'
+    'video.list',
+    // 'portability.directmessages.ongoing'
 ].join(',');
 
 app.get('/', (req: Request, res: Response) => {
@@ -237,6 +247,7 @@ app.get('/auth/tiktok/callback', async (req: Request, res: Response) => {
                 <div class="actions">
                     <a href="${userData.profile_deep_link}" target="_blank" class="btn btn-primary">Open in TikTok</a>
                     <a href="/auth/tiktok/refresh?refresh_token=${refresh_token}" target="_blank" class="btn btn-secondary">Test Refresh Token</a>
+                    <a href="/portability/request?access_token=${access_token}&open_id=${open_id}" target="_blank" class="btn btn-secondary" style="background: #e1f5fe; color: #0277bd; border-color: #b3e5fc;">Request Message History (EEA/UK Only)</a>
                 </div>
 
                 <div class="tech-details">
@@ -301,6 +312,124 @@ app.get('/auth/tiktok/refresh', async (req: Request, res: Response) => {
     }
 });
 
+// 4. Webhook Endpoint
+app.post('/webhook', (req: Request, res: Response) => {
+    try {
+        const signature = req.headers['tiktok-signature'] as string;
+        const rawBody = (req as any).rawBody;
+
+        if (!signature || !rawBody) {
+            res.status(400).send('Missing signature or body');
+            return;
+        }
+
+        // Verify Signature
+        // Signature format: t=timestamp,s=signature
+        const parts = signature.split(',');
+        const timestamp = parts.find(p => p.startsWith('t='))?.split('=')[1];
+        const providedSignature = parts.find(p => p.startsWith('s='))?.split('=')[1];
+
+        if (!timestamp || !providedSignature) {
+            res.status(400).send('Invalid signature format');
+            return;
+        }
+
+        // Construct signed payload: timestamp.rawBody
+        const signedPayload = `${timestamp}.${rawBody.toString()}`;
+
+        // Calculate expected signature using HMAC-SHA256 and CLIENT_SECRET
+        const expectedSignature = crypto
+            .createHmac('sha256', CLIENT_SECRET || '')
+            .update(signedPayload)
+            .digest('hex');
+
+        if (expectedSignature !== providedSignature) {
+            console.error('Invalid Signature');
+            res.status(401).send('Invalid Signature');
+            return;
+        }
+
+        console.log('Webhook Verified & Received:', JSON.stringify(req.body, null, 2));
+
+        const event = req.body;
+
+        // Check for common event type fields (TikTok structure varies by API)
+        const eventType = event.event || event.type || event.event_type;
+
+        if (eventType) {
+            console.log(`Event Type Detected: ${eventType}`);
+
+            // Check for Chat/Message events
+            // Note: 'im.message.receive_v1' is common in Lark, 'NEW_MESSAGE' in TikTok Shop
+            if (eventType === 'im.message.receive_v1' || eventType === 'NEW_MESSAGE') {
+                console.log('💬 New Chat Message Received!');
+                // Add your chat handling logic here
+            }
+        } else {
+            console.log('⚠️ Could not detect Event Type. Inspect the raw body above.');
+        }
+
+        res.status(200).send('OK');
+
+    } catch (error) {
+        console.error('Webhook Error:', error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// Webhook Verification Challenge (Optional/If required by specific TikTok API)
+app.get('/webhook', (req: Request, res: Response) => {
+    const { challenge } = req.query;
+    if (challenge) {
+        res.send(challenge);
+    } else {
+        res.status(400).send('No challenge provided');
+    }
+});
+
+// 5. Data Portability Endpoints
+app.get('/portability/request', async (req: Request, res: Response) => {
+    const { access_token, open_id } = req.query;
+
+    if (!access_token || !open_id) {
+        res.status(400).send('Error: Missing access_token or open_id');
+        return;
+    }
+
+    try {
+        // Note: This endpoint is for demonstration. Actual endpoint depends on region and specific API version.
+        // Using a hypothetical endpoint based on standard Data Portability flows.
+        const portabilityEndpoint = 'https://open.tiktokapis.com/v2/portability/request/';
+
+        const response = await axios.post(portabilityEndpoint, {
+            open_id: open_id,
+            data_types: ['direct_messages']
+        }, {
+            headers: {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Portability Request Response:', response.data);
+        res.send(`
+            <h1>Request Submitted</h1>
+            <p>Data export request for messages has been submitted.</p>
+            <p>Job ID: ${response.data.job_id || 'N/A'}</p>
+            <p><a href="/">Back to Home</a></p>
+        `);
+
+    } catch (error: any) {
+        console.error('Portability Error:', error.response ? error.response.data : error.message);
+        res.status(500).send(`
+            <h1>Request Failed</h1>
+            <p>Error: ${error.response ? JSON.stringify(error.response.data) : error.message}</p>
+            <p><strong>Note:</strong> This feature is restricted to EEA/UK users. If you are outside these regions, this error is expected.</p>
+        `);
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
+// Webhooks implemented
