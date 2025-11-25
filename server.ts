@@ -354,8 +354,40 @@ app.get('/auth/tiktok/callback', async (req: Request, res: Response) => {
                     <div class="tech-item"><span class="tech-label">Token:</span> ${access_token}...</div>
                 </div>
 
-                <details>
-                    <summary>View Raw JSON Response</summary>
+                <div style="margin-top: 30px; background: #fff; border-radius: 12px; border: 1px solid #e3e3e3; overflow: hidden;">
+                    <div style="padding: 16px; background: #f8f9fa; border-bottom: 1px solid #e3e3e3; font-weight: 600; color: #161823;">
+                        Business Data Overview
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px 16px; color: #86909c; width: 40%;">Display Name</td>
+                            <td style="padding: 12px 16px; color: #161823; font-weight: 500;">${userData.display_name}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px 16px; color: #86909c;">Verified Status</td>
+                            <td style="padding: 12px 16px; color: #161823;">${userData.is_verified ? '✅ Verified' : 'Unverified'}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px 16px; color: #86909c;">Followers</td>
+                            <td style="padding: 12px 16px; color: #161823;">${userData.follower_count?.toLocaleString() || 0}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px 16px; color: #86909c;">Total Likes</td>
+                            <td style="padding: 12px 16px; color: #161823;">${userData.likes_count?.toLocaleString() || 0}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #f0f0f0;">
+                            <td style="padding: 12px 16px; color: #86909c;">Video Count</td>
+                            <td style="padding: 12px 16px; color: #161823;">${userData.video_count?.toLocaleString() || 0}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px 16px; color: #86909c;">Open ID (Technical)</td>
+                            <td style="padding: 12px 16px; color: #161823; font-family: monospace;">${userData.open_id}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <details style="margin-top: 20px;">
+                    <summary style="color: #86909c; font-size: 12px;">View Raw Technical Data (JSON)</summary>
                     <pre>${JSON.stringify(userData, null, 2)}</pre>
                 </details>
             </div>
@@ -365,7 +397,39 @@ app.get('/auth/tiktok/callback', async (req: Request, res: Response) => {
 
     } catch (error: any) {
         console.error('Error:', error.response ? error.response.data : error.message);
-        res.status(500).send(`Error: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
+
+        // Check if it's an invalid grant error (common on refresh)
+        const isInvalidGrant = error.response && error.response.data && error.response.data.error === 'invalid_grant';
+
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Login Error</title>
+                <style>
+                    body { font-family: 'Inter', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; color: #333; }
+                    .container { background: white; padding: 40px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); max-width: 400px; text-align: center; }
+                    h1 { color: #FE2C55; margin-bottom: 16px; }
+                    p { color: #666; margin-bottom: 24px; line-height: 1.5; }
+                    .btn { display: inline-block; background: #161823; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+                    .btn:hover { background: #000; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>⚠️ Login Failed</h1>
+                    <p>
+                        ${isInvalidGrant ? 'The login session has expired or the code has already been used.' : 'An error occurred during login.'}
+                        <br><br>
+                        Please try connecting again.
+                    </p>
+                    <a href="/" class="btn">Return Home</a>
+                </div>
+            </body>
+            </html>
+        `);
     }
 });
 
